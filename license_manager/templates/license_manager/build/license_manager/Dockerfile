@@ -13,6 +13,10 @@
 FROM docker.io/ubuntu:20.04 as minimal
 LABEL maintainer="Lawrence McDaniel <lpm0073@gmail.com>"
 
+{% if APT_PROXY -%}
+RUN echo 'Acquire::{{ APT_PROXY | url_part('scheme') }}::Proxy "{{ APT_PROXY }}";' \
+    > /etc/apt/apt.conf.d/00proxy 
+{%- endif %}
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt update && \
     apt install -y build-essential curl git language-pack-en
@@ -66,6 +70,9 @@ RUN apt update && apt install -y software-properties-common libmysqlclient-dev l
 COPY --from=code /openedx/license_manager /openedx/license_manager
 WORKDIR /openedx/license_manager
 
+ENV PIP_INDEX_URL={{ PIP_INDEX_URL }} \
+    PIP_TRUSTED_HOST={{ PIP_INDEX_URL | url_part('netloc') }}
+
 # Install uwsgi
 # https://pypi.org/project/uWSGI/
 RUN pip install uwsgi==2.0.20
@@ -92,6 +99,10 @@ RUN apt update && \
     apt install -y gettext gfortran graphviz graphviz-dev libffi-dev libfreetype6-dev libgeos-dev libjpeg8-dev liblapack-dev libmysqlclient-dev libpng-dev libsqlite3-dev libxmlsec1-dev lynx ntp pkg-config rdfind && \
     rm -rf /var/lib/apt/lists/*
 
+{% if APT_PROXY -%}
+RUN rm /etc/apt/apt.conf.d/00proxy
+{%- endif %}
+
 # From then on, run as unprivileged "app" user
 ARG APP_USER_ID=1000
 RUN useradd --home-dir /openedx --create-home --shell /bin/bash --uid ${APP_USER_ID} app
@@ -109,6 +120,9 @@ WORKDIR /openedx/license_manager
 
 # Re-install local requirements, otherwise egg-info folders are missing
 # RUN pip install -r requirements/edx/local.in
+
+ENV PIP_INDEX_URL= \
+    PIP_TRUSTED_HOST=
 
 ###### Setup minimal yml config file, which is required by tutor.production settings
 RUN echo "{}" > /openedx/config.yml
@@ -130,6 +144,7 @@ EXPOSE 8000
 
 ###### Final image with production cmd
 FROM production as final
+
 
 # Run server
 CMD uwsgi \
